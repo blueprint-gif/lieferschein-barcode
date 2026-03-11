@@ -1,11 +1,11 @@
 import streamlit as st
 import re
+import fitz  # PyMuPDF für die absolut sichere Vorschau
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.graphics.barcode import code39
 from reportlab.lib.units import mm
 from io import BytesIO
-from pdf2image import convert_from_bytes # <-- NEU für die Vorschau
 
 # --- SEITEN-KONFIGURATION ---
 st.set_page_config(page_title="Barcode Lieferschein Tool", page_icon="📦")
@@ -20,8 +20,6 @@ def create_barcode_overlay(auftrag, lieferschein):
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=(210*mm, 297*mm))
     
-    # --- FEINTUNING DER POSITION ---
-    # Etwas weiter nach links (135 statt 145) und deutlich weiter nach unten (265 statt 282)
     x_pos = 135 * mm 
     y_start = 265 * mm
 
@@ -69,7 +67,6 @@ if uploaded_file is not None:
             
             st.markdown("---")
             
-            # Button zum Herunterladen
             st.download_button(
                 label="⬇️ Fertiges Dokument mit Barcodes herunterladen",
                 data=output_pdf,
@@ -78,12 +75,12 @@ if uploaded_file is not None:
             )
             
             st.markdown("### Vorschau (Seite 1):")
-            # --- DIE NEUE BILD-VORSCHAU ---
-            # Wandelt die erste Seite des PDFs im Arbeitsspeicher in ein Bild um
-            images = convert_from_bytes(output_pdf.getvalue(), first_page=1, last_page=1, dpi=150)
-            if images:
-                # Zeigt das Bild direkt in Streamlit an
-                st.image(images[0], use_column_width=True)
+            
+            # --- NEUE, ROBUSTE VORSCHAU OHNE POPPLER ---
+            doc = fitz.open(stream=output_pdf.getvalue(), filetype="pdf")
+            page = doc.load_page(0) 
+            pix = page.get_pixmap(dpi=150) 
+            st.image(pix.tobytes(), use_container_width=True)
             
         else:
             st.warning("⚠️ Es konnten keine Auftrags- oder Lieferscheinnummern im PDF gefunden werden.")
