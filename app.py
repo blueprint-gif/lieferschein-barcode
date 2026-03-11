@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+import base64
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.graphics.barcode import code39
@@ -7,10 +8,10 @@ from reportlab.lib.units import mm
 from io import BytesIO
 
 # --- SEITEN-KONFIGURATION ---
-st.set_page_config(page_title="Barcode Lieferschein Tool", page_icon="📦")
+# "layout='wide'" macht die App breiter, damit das PDF besser reinpasst
+st.set_page_config(page_title="Barcode Lieferschein Tool", page_icon="📦", layout="wide")
 
 def extract_numbers(text):
-    # Die extrem robuste Suche, die alle Umbrüche im Blueprint-Layout meistert
     auftrag_match = re.search(r"Auftrags-Nr[\s\S]*?(\d{6,})", text)
     ls_match = re.search(r"Lieferschein[\s\S]*?(PA-\d+)", text)
     return (auftrag_match.group(1) if auftrag_match else None, 
@@ -20,20 +21,22 @@ def create_barcode_overlay(auftrag, lieferschein):
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=(210*mm, 297*mm))
     
-    # Position: Oben rechts
+    # --- NEUE POSITIONIERUNG ---
     x_pos = 145 * mm 
-    y_start = 270 * mm
+    # y_start weiter nach oben geschoben (von 270 auf 282)
+    y_start = 282 * mm
 
     def draw_bc(text, y, label):
         if text:
-            # 30% vergrößerter Standard39 Barcode
             bc = code39.Standard39(text.upper(), barWidth=0.4*mm, barHeight=13*mm, checksum=0)
-            can.setFont("Helvetica-Bold", 12)
-            can.drawString(x_pos, y + 15*mm, f"{label} {text.upper()}")
+            # Schriftart minimal verkleinert, damit es kompakter wirkt
+            can.setFont("Helvetica-Bold", 10) 
+            can.drawString(x_pos, y + 14*mm, f"{label} {text.upper()}")
             bc.drawOn(can, x_pos, y)
 
+    # Abstand zwischen den Barcodes verringert (von 30mm auf 21mm)
     draw_bc(auftrag, y_start, "Auftrag:")
-    draw_bc(lieferschein, y_start - 30*mm, "Lieferschein:")
+    draw_bc(lieferschein, y_start - 21*mm, "Lieferschein:")
     
     can.save()
     packet.seek(0)
@@ -41,14 +44,13 @@ def create_barcode_overlay(auftrag, lieferschein):
 
 # --- WEB-OBERFLÄCHE ---
 st.title("📦 Barcode Lieferschein Tool")
-st.markdown("Ziehen Sie das Original-PDF einfach hier in das Feld. Das Tool liest die Nummern aus und generiert sofort das fertige Dokument.")
+st.markdown("Dieses Tool liest automatisch Auftrags- und Lieferscheinnummern aus hochgeladenen Dokumenten aus und platziert die entsprechenden Barcodes platzsparend oben rechts.")
 
-# Das Drag & Drop Feld
-uploaded_file = st.file_uploader("DATEV-PDF hochladen", type="pdf")
+# Neues, neutrales Wording
+uploaded_file = st.file_uploader("PDF Lieferschein hochladen", type="pdf")
 
 if uploaded_file is not None:
     try:
-        # PDF direkt aus dem Browser-Speicher (ohne Festplatte) lesen
         reader = PdfReader(uploaded_file)
         page_text = reader.pages[0].extract_text()
         
@@ -60,25 +62,31 @@ if uploaded_file is not None:
             writer = PdfWriter()
             overlay_pdf = PdfReader(create_barcode_overlay(nr_auftrag, nr_ls))
             
-            # Stempelt den Barcode auf die erste Seite
             for i, page in enumerate(reader.pages):
                 if i == 0:
                     page.merge_page(overlay_pdf.pages[0])
                 writer.add_page(page)
             
-            # Fertiges PDF für den Download vorbereiten
             output_pdf = BytesIO()
             writer.write(output_pdf)
             output_pdf.seek(0)
             
             st.markdown("---")
-            # Der große Download-Button
+            
+            # Button zum klassischen Herunterladen bleibt als Backup
             st.download_button(
-                label="⬇️ Fertiges PDF herunterladen",
+                label="⬇️ Fertiges Dokument mit Barcodes herunterladen",
                 data=output_pdf,
                 file_name=f"BARCODED_{uploaded_file.name}",
                 mime="application/pdf"
             )
+            
+            st.markdown("### Vorschau des fertigen Dokuments:")
+            # --- NEU: PDF direkt im Browser anzeigen ---
+            base64_pdf = base64.b64encode(output_pdf.getvalue()).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800px" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            
         else:
             st.warning("⚠️ Es konnten keine Auftrags- oder Lieferscheinnummern im PDF gefunden werden.")
             
