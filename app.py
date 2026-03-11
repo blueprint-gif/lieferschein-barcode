@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-import fitz  # PyMuPDF für die absolut sichere Vorschau
+import fitz  # PyMuPDF für die sichere Vorschau
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.graphics.barcode import code39
@@ -20,8 +20,10 @@ def create_barcode_overlay(auftrag, lieferschein):
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=(210*mm, 297*mm))
     
+    # --- FEINTUNING DER POSITION ---
     x_pos = 135 * mm 
-    y_start = 265 * mm
+    # 1 cm weiter nach oben (von 265 auf 275)
+    y_start = 275 * mm
 
     def draw_bc(text, y, label):
         if text:
@@ -31,7 +33,8 @@ def create_barcode_overlay(auftrag, lieferschein):
             bc.drawOn(can, x_pos, y)
 
     draw_bc(auftrag, y_start, "Auftrag:")
-    draw_bc(lieferschein, y_start - 21*mm, "Lieferschein:")
+    # Etwas enger zusammen (18mm Abstand statt 21mm)
+    draw_bc(lieferschein, y_start - 18*mm, "Lieferschein:")
     
     can.save()
     packet.seek(0)
@@ -76,7 +79,7 @@ if uploaded_file is not None:
             
             st.markdown("### Vorschau (Seite 1):")
             
-            # --- NEUE, ROBUSTE VORSCHAU OHNE POPPLER ---
+            # --- ROBUSTE VORSCHAU ---
             doc = fitz.open(stream=output_pdf.getvalue(), filetype="pdf")
             page = doc.load_page(0) 
             pix = page.get_pixmap(dpi=150) 
