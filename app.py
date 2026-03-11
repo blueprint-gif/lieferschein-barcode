@@ -1,15 +1,14 @@
 import streamlit as st
 import re
-import base64
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.graphics.barcode import code39
 from reportlab.lib.units import mm
 from io import BytesIO
+from pdf2image import convert_from_bytes # <-- NEU für die Vorschau
 
 # --- SEITEN-KONFIGURATION ---
-# "layout='wide'" macht die App breiter, damit das PDF besser reinpasst
-st.set_page_config(page_title="Barcode Lieferschein Tool", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Barcode Lieferschein Tool", page_icon="📦")
 
 def extract_numbers(text):
     auftrag_match = re.search(r"Auftrags-Nr[\s\S]*?(\d{6,})", text)
@@ -21,20 +20,18 @@ def create_barcode_overlay(auftrag, lieferschein):
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=(210*mm, 297*mm))
     
-    # --- NEUE POSITIONIERUNG ---
-    x_pos = 145 * mm 
-    # y_start weiter nach oben geschoben (von 270 auf 282)
-    y_start = 282 * mm
+    # --- FEINTUNING DER POSITION ---
+    # Etwas weiter nach links (135 statt 145) und deutlich weiter nach unten (265 statt 282)
+    x_pos = 135 * mm 
+    y_start = 265 * mm
 
     def draw_bc(text, y, label):
         if text:
             bc = code39.Standard39(text.upper(), barWidth=0.4*mm, barHeight=13*mm, checksum=0)
-            # Schriftart minimal verkleinert, damit es kompakter wirkt
             can.setFont("Helvetica-Bold", 10) 
             can.drawString(x_pos, y + 14*mm, f"{label} {text.upper()}")
             bc.drawOn(can, x_pos, y)
 
-    # Abstand zwischen den Barcodes verringert (von 30mm auf 21mm)
     draw_bc(auftrag, y_start, "Auftrag:")
     draw_bc(lieferschein, y_start - 21*mm, "Lieferschein:")
     
@@ -46,7 +43,6 @@ def create_barcode_overlay(auftrag, lieferschein):
 st.title("📦 Barcode Lieferschein Tool")
 st.markdown("Dieses Tool liest automatisch Auftrags- und Lieferscheinnummern aus hochgeladenen Dokumenten aus und platziert die entsprechenden Barcodes platzsparend oben rechts.")
 
-# Neues, neutrales Wording
 uploaded_file = st.file_uploader("PDF Lieferschein hochladen", type="pdf")
 
 if uploaded_file is not None:
@@ -73,7 +69,7 @@ if uploaded_file is not None:
             
             st.markdown("---")
             
-            # Button zum klassischen Herunterladen bleibt als Backup
+            # Button zum Herunterladen
             st.download_button(
                 label="⬇️ Fertiges Dokument mit Barcodes herunterladen",
                 data=output_pdf,
@@ -81,11 +77,13 @@ if uploaded_file is not None:
                 mime="application/pdf"
             )
             
-            st.markdown("### Vorschau des fertigen Dokuments:")
-            # --- NEU: PDF direkt im Browser anzeigen ---
-            base64_pdf = base64.b64encode(output_pdf.getvalue()).decode('utf-8')
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800px" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            st.markdown("### Vorschau (Seite 1):")
+            # --- DIE NEUE BILD-VORSCHAU ---
+            # Wandelt die erste Seite des PDFs im Arbeitsspeicher in ein Bild um
+            images = convert_from_bytes(output_pdf.getvalue(), first_page=1, last_page=1, dpi=150)
+            if images:
+                # Zeigt das Bild direkt in Streamlit an
+                st.image(images[0], use_column_width=True)
             
         else:
             st.warning("⚠️ Es konnten keine Auftrags- oder Lieferscheinnummern im PDF gefunden werden.")
